@@ -1,6 +1,11 @@
 package indexer
 
 import (
+	"context"
+	"database/sql"
+	"dex-indexer/internal/config"
+	"dex-indexer/internal/db/model"
+	"dex-indexer/internal/db/repository"
 	"log"
 	"math/big"
 	"strings"
@@ -10,37 +15,24 @@ import (
 
 type DepositEngine struct {
 	confirmations     uint64
-	pending           map[string]*Deposit
+	db                *sql.DB
 	exchangeAddresses map[string]bool
 }
 
 type DepositStatus string
 
-const (
-	StatusPending   DepositStatus = "PENDING"
-	StatusConfirmed DepositStatus = "CONFIRMED"
-)
-
-type Deposit struct {
-	TxHash      string
-	FromAddress string
-	ToAddress   string
-	Amount      *big.Int
-	BlockNumber uint64
-	Status      DepositStatus
-}
-
-func NewDepositEngine(confirmations uint64, exchangeAddress map[string]bool) *DepositEngine {
+func NewDepositEngine(cfg *config.Config, db *sql.DB) *DepositEngine {
 	return &DepositEngine{
-		confirmations:     confirmations,
-		pending:           make(map[string]*Deposit),
-		exchangeAddresses: exchangeAddress,
+		confirmations:     cfg.Confirmations,
+		db:                db,
+		exchangeAddresses: cfg.ExchangeAddresses,
 	}
 }
 
 func (de *DepositEngine) OnTransfer(
+	ctx context.Context,
 	txHash string,
-	from, to common.Address,
+	token, from, to common.Address,
 	amount *big.Int,
 	blockNumber uint64,
 ) {
@@ -48,31 +40,41 @@ func (de *DepositEngine) OnTransfer(
 	if !de.exchangeAddresses[strings.ToLower(to.Hex())] {
 		return
 	}
-	// Ignore if this transfer is already pending
-	if _, exists := de.pending[txHash]; exists {
-		return
-	}
 
-	de.pending[txHash] = &Deposit{
-		TxHash:      txHash,
-		FromAddress: from.Hex(),
-		ToAddress:   to.Hex(),
-		Amount:      amount,
-		BlockNumber: blockNumber,
-		Status:      StatusPending,
+	deposit := &model.Deposit{
+		TxHash:       txHash,
+		BlockNumber:  blockNumber,
+		TokenAddress: token.Hex(),
+		FromAddress:  from.Hex(),
+		ToAddress:    to.Hex(),
+		Amount:       amount,
+		Status:       model.DepositPending,
 	}
 
 	log.Println("[Pending]", txHash, "amount:", amount)
+	// write DB / ledger
+	err := repository.InsertPending(ctx, de.db, deposit)
+	if err != nil {
+		log.Println("Error inserting pending deposit:", err)
+	}
 }
 
-func (de *DepositEngine) Confirm(latestBlock uint64) {
-	for txHash, deposit := range de.pending {
+func (de *DepositEngine) Confirm(ctx context.Context, latestBlock uint64) {
+	deposits, err := repository.ListPending(ctx, de.db)
+	if err != nil {
+		log.Println("Error listing pending deposits:", err)
+		return
+	}
+
+	for _, deposit := range deposits {
 		if latestBlock-deposit.BlockNumber >= de.confirmations {
-			deposit.Status = StatusConfirmed
-			log.Println("[Confirmed]", txHash, "amount:", deposit.Amount)
+			deposit.Status = model.DepositConfirmed
+			log.Println("[Confirmed]", deposit.TxHash, "amount:", deposit.Amount)
 			// write DB / ledger
-			// de.persistConfirmedDeposit(deposit)
-			delete(de.pending, txHash)
+			err := repository.Confirm(ctx, de.db, deposit.ID)
+			if err != nil {
+				log.Println("Error confirming deposit:", err)
+			}
 		}
 	}
 }

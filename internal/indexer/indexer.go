@@ -2,6 +2,7 @@ package indexer
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"log"
 
@@ -15,13 +16,13 @@ type Indexer struct {
 	depositEngine *DepositEngine
 }
 
-func New(cfg *config.Config) *Indexer {
+func New(cfg *config.Config, db *sql.DB) *Indexer {
 	client := chain.NewClient(cfg.RPC)
 
 	return &Indexer{
 		cfg:           cfg,
 		client:        client,
-		depositEngine: NewDepositEngine(cfg.Confirmations, cfg.ExchangeAddresses),
+		depositEngine: NewDepositEngine(cfg, db),
 	}
 }
 

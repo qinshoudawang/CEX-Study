@@ -36,7 +36,7 @@ func (i *Indexer) ConfirmDeposit(ctx context.Context, errChan chan error) {
 				errChan <- err
 				return
 			}
-			i.depositEngine.Confirm(latestBlock)
+			i.depositEngine.Confirm(ctx, latestBlock)
 		}
 	}
 }
@@ -106,16 +106,16 @@ func (i *Indexer) processBlockRange(ctx context.Context, parsedABI abi.ABI, tran
 			continue
 		}
 
-		log.Printf("found %d transfer logs in blocks %d to %d\n", len(logs), start, end)
+		log.Printf("[%s] found %d transfer logs in blocks %d to %d", transfer.Hex(), len(logs), start, end)
 
 		for _, vLog := range logs {
-			i.handleTransfer(parsedABI, vLog)
+			i.handleTransfer(ctx, transfer, parsedABI, vLog)
 		}
 	}
 	return nil
 }
 
-func (i *Indexer) handleTransfer(contractAbi abi.ABI, vLog types.Log) {
+func (i *Indexer) handleTransfer(ctx context.Context, transfer common.Address, contractAbi abi.ABI, vLog types.Log) {
 	var event TransferEvent
 
 	err := contractAbi.UnpackIntoInterface(&event, "Transfer", vLog.Data)
@@ -125,7 +125,9 @@ func (i *Indexer) handleTransfer(contractAbi abi.ABI, vLog types.Log) {
 	}
 
 	i.depositEngine.OnTransfer(
+		ctx,
 		vLog.TxHash.Hex(),
+		transfer,
 		common.HexToAddress(vLog.Topics[1].Hex()),
 		common.HexToAddress(vLog.Topics[2].Hex()),
 		event.Value,
