@@ -3,7 +3,6 @@ package indexer
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"log"
 
 	"dex-indexer/internal/chain"
@@ -13,7 +12,7 @@ import (
 type Indexer struct {
 	cfg           *config.Config
 	client        *chain.Client
-	depositEngine *DepositEngine
+	DepositEngine *DepositEngine
 }
 
 func New(cfg *config.Config, db *sql.DB) *Indexer {
@@ -22,31 +21,12 @@ func New(cfg *config.Config, db *sql.DB) *Indexer {
 	return &Indexer{
 		cfg:           cfg,
 		client:        client,
-		depositEngine: NewDepositEngine(cfg, db),
+		DepositEngine: NewDepositEngine(cfg, client, db),
 	}
 }
 
-func (i *Indexer) Start(ctx context.Context) error {
+func (i *Indexer) Start(ctx context.Context, errChan chan error) {
 	log.Println("indexer started")
 
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	errChan := make(chan error, 2)
-
-	go i.indexERC20Transfers(ctx, errChan)
-	go i.ConfirmDeposit(ctx, errChan)
-
-	// Wait for the first error (or cancellation), then stop the rest.
-	err := <-errChan
-	cancel()
-
-	if err == nil {
-		return nil
-	}
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-		log.Println("indexer stopped: ", err)
-		return nil
-	}
-	return err
+	i.indexERC20Transfers(ctx, errChan)
 }

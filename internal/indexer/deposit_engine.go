@@ -3,28 +3,34 @@ package indexer
 import (
 	"context"
 	"database/sql"
+	"dex-indexer/internal/chain"
 	"dex-indexer/internal/config"
 	"dex-indexer/internal/db/model"
 	"dex-indexer/internal/db/repository"
 	"log"
 	"math/big"
-	"strings"
 
 	"github.com/ethereum/go-ethereum/common"
 )
 
+const (
+	CONFIRMATIONS = 2
+	ETHEREUM      = "ethereum"
+	ASSET_USDC    = "USDC"
+)
+
 type DepositEngine struct {
-	confirmations     uint64
 	db                *sql.DB
+	client            *chain.Client
 	exchangeAddresses map[string]bool
 }
 
 type DepositStatus string
 
-func NewDepositEngine(cfg *config.Config, db *sql.DB) *DepositEngine {
+func NewDepositEngine(cfg *config.Config, client *chain.Client, db *sql.DB) *DepositEngine {
 	return &DepositEngine{
-		confirmations:     cfg.Confirmations,
 		db:                db,
+		client:            client,
 		exchangeAddresses: cfg.ExchangeAddresses,
 	}
 }
@@ -36,8 +42,7 @@ func (de *DepositEngine) OnTransfer(
 	amount *big.Int,
 	blockNumber uint64,
 ) {
-	// Ignore if 'to' address is not an exchange address
-	if !de.exchangeAddresses[strings.ToLower(to.Hex())] {
+	if !de.exchangeAddresses[to.Hex()] {
 		return
 	}
 
@@ -59,22 +64,51 @@ func (de *DepositEngine) OnTransfer(
 	}
 }
 
-func (de *DepositEngine) Confirm(ctx context.Context, latestBlock uint64) {
+func (de *DepositEngine) ListConfirmable(ctx context.Context) ([]*model.Deposit, error) {
 	deposits, err := repository.ListPending(ctx, de.db)
 	if err != nil {
 		log.Println("Error listing pending deposits:", err)
-		return
+		return nil, err
 	}
 
+	latestBlock, err := de.client.Eth.BlockNumber(ctx)
+	if err != nil {
+		log.Println("Error getting latest block number:", err)
+		return nil, err
+	}
+
+	confirmable_deposits := []*model.Deposit{}
 	for _, deposit := range deposits {
-		if latestBlock-deposit.BlockNumber >= de.confirmations {
+		if latestBlock-deposit.BlockNumber >= CONFIRMATIONS {
 			deposit.Status = model.DepositConfirmed
-			log.Println("[Confirmed]", deposit.TxHash, "amount:", deposit.Amount)
-			// write DB / ledger
-			err := repository.Confirm(ctx, de.db, deposit.ID)
-			if err != nil {
-				log.Println("Error confirming deposit:", err)
-			}
+			confirmable_deposits = append(confirmable_deposits, deposit)
 		}
 	}
+
+	return confirmable_deposits, nil
+}
+
+func (de *DepositEngine) MarkConfirmedTx(
+	ctx context.Context,
+	depositID int64,
+	tx *sql.Tx) error {
+	log.Printf("[Confirmed] deposit ID: %d", depositID)
+	return repository.ConfirmTx(
+		ctx,
+		depositID,
+		tx,
+	)
+}
+
+func (de *DepositEngine) GetUserIDFromDepositTx(
+	ctx context.Context,
+	deposit *model.Deposit,
+	tx *sql.Tx,
+) (int64, error) {
+	return repository.GetUserIDByDepositAddressTx(
+		ctx,
+		ETHEREUM,
+		deposit.FromAddress,
+		tx,
+	)
 }

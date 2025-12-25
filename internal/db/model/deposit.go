@@ -19,3 +19,11 @@ type Deposit struct {
 	Amount       *big.Int
 	Status       DepositStatus
 }
+
+type DepositAddresses struct {
+	ID      int64
+	UserID  string
+	Chain   string
+	Asset   string
+	Address string
+}

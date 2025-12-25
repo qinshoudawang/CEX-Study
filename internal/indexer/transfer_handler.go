@@ -20,27 +20,6 @@ type TransferEvent struct {
 	Value *big.Int
 }
 
-func (i *Indexer) ConfirmDeposit(ctx context.Context, errChan chan error) {
-	ticker := time.NewTicker(10 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			log.Println("Stopping confirmation checker: context canceled")
-			errChan <- ctx.Err()
-			return
-		case <-ticker.C:
-			latestBlock, err := i.client.Eth.BlockNumber(ctx)
-			if err != nil {
-				errChan <- err
-				return
-			}
-			i.depositEngine.Confirm(ctx, latestBlock)
-		}
-	}
-}
-
 func (i *Indexer) indexERC20Transfers(ctx context.Context, errChan chan error) {
 	parsedABI, err := loadTransferABI()
 	if err != nil {
@@ -89,7 +68,14 @@ func (i *Indexer) indexERC20Transfers(ctx context.Context, errChan chan error) {
 	}
 }
 
-func (i *Indexer) processBlockRange(ctx context.Context, parsedABI abi.ABI, transfer common.Address, eventID common.Hash, fromBlock, toBlock uint64) error {
+func (i *Indexer) processBlockRange(
+	ctx context.Context,
+	parsedABI abi.ABI,
+	transfer common.Address,
+	eventID common.Hash,
+	fromBlock, toBlock uint64,
+) error {
+
 	for start := fromBlock; start <= toBlock; start += i.cfg.BatchSize {
 		end := min(start+i.cfg.BatchSize-1, toBlock)
 
@@ -115,7 +101,13 @@ func (i *Indexer) processBlockRange(ctx context.Context, parsedABI abi.ABI, tran
 	return nil
 }
 
-func (i *Indexer) handleTransfer(ctx context.Context, transfer common.Address, contractAbi abi.ABI, vLog types.Log) {
+func (i *Indexer) handleTransfer(
+	ctx context.Context,
+	transfer common.Address,
+	contractAbi abi.ABI,
+	vLog types.Log,
+) {
+
 	var event TransferEvent
 
 	err := contractAbi.UnpackIntoInterface(&event, "Transfer", vLog.Data)
@@ -124,7 +116,7 @@ func (i *Indexer) handleTransfer(ctx context.Context, transfer common.Address, c
 		return
 	}
 
-	i.depositEngine.OnTransfer(
+	i.DepositEngine.OnTransfer(
 		ctx,
 		vLog.TxHash.Hex(),
 		transfer,

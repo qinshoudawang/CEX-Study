@@ -4,7 +4,6 @@ import (
 	"dex-indexer/internal/db"
 	"os"
 	"strconv"
-	"strings"
 
 	"github.com/joho/godotenv"
 )
@@ -12,8 +11,7 @@ import (
 type Config struct {
 	RPC               string
 	USDC_TOKEN        string
-	BatchSize         uint64
-	Confirmations     uint64
+	BatchSize         uint64 // number of blocks to process in one batch
 	ExchangeAddresses map[string]bool
 	DBConfig          *db.Config
 }
@@ -21,12 +19,11 @@ type Config struct {
 // Load loads the configuration
 func Load() *Config {
 	return &Config{
-		RPC:           os.Getenv("ETH_RPC_URL"),
-		USDC_TOKEN:    os.Getenv("USDC_TOKEN"),
-		BatchSize:     10,
-		Confirmations: 10,
+		RPC:        os.Getenv("ETH_RPC_URL"),
+		USDC_TOKEN: os.Getenv("USDC_TOKEN"),
+		BatchSize:  10,
 		ExchangeAddresses: map[string]bool{
-			strings.ToLower(os.Getenv("EXCHANGE_ADDRESS")): true,
+			os.Getenv("EXCHANGE_ADDRESS"): true,
 		},
 		DBConfig: &db.Config{
 			Host:     os.Getenv("DB_HOST"),

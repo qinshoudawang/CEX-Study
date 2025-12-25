@@ -37,7 +37,7 @@ func ListPending(
 ) ([]*model.Deposit, error) {
 
 	rows, err := db.QueryContext(ctx, `
-		SELECT id, tx_hash, block_number, amount
+		SELECT id, tx_hash, block_number, token_address, from_address, amount
 		FROM deposits
 		WHERE status = 'PENDING'
 	`)
@@ -55,6 +55,8 @@ func ListPending(
 			&d.ID,
 			&d.TxHash,
 			&d.BlockNumber,
+			&d.TokenAddress,
+			&d.FromAddress,
 			&amountStr,
 		); err != nil {
 			return nil, err
@@ -67,17 +69,33 @@ func ListPending(
 	return res, nil
 }
 
-func Confirm(
+func ConfirmTx(
 	ctx context.Context,
-	db *sql.DB,
 	id int64,
+	tx *sql.Tx,
 ) error {
 
-	_, err := db.ExecContext(ctx, `
+	_, err := tx.ExecContext(ctx, `
 		UPDATE deposits
 		SET status = 'CONFIRMED',
 		    confirmed_at = now()
 		WHERE id = $1
 	`, id)
 	return err
+}
+
+func GetUserIDByDepositAddressTx(
+	ctx context.Context,
+	chain, address string,
+	tx *sql.Tx,
+) (int64, error) {
+
+	var userID int64
+	err := tx.QueryRowContext(ctx, `
+		SELECT user_id
+		FROM deposit_addresses
+		WHERE chain = $1 AND address = $2
+	`, chain, address).Scan(&userID)
+
+	return userID, err
 }
