@@ -3,7 +3,7 @@ package ledger
 import (
 	"context"
 	"database/sql"
-	"dex-indexer/internal/db/repository"
+	"dex-indexer/internal/middleware/db/repository"
 	"math/big"
 )
 

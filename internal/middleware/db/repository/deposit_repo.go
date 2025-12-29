@@ -3,7 +3,7 @@ package repository
 import (
 	"context"
 	"database/sql"
-	"dex-indexer/internal/db/model"
+	"dex-indexer/internal/middleware/db/model"
 	"math/big"
 )
 

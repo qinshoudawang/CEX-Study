@@ -5,8 +5,8 @@ import (
 	"database/sql"
 	"dex-indexer/internal/chain"
 	"dex-indexer/internal/config"
-	"dex-indexer/internal/db/model"
-	"dex-indexer/internal/db/repository"
+	"dex-indexer/internal/middleware/db/model"
+	"dex-indexer/internal/middleware/db/repository"
 	"log"
 	"math/big"
 

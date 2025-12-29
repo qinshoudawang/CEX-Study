@@ -14,14 +14,19 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 )
 
+const (
+	ERC20_ABI_PATH = "internal/chain/abi/erc20.json"
+)
+
 type TransferEvent struct {
 	From  common.Address
 	To    common.Address
 	Value *big.Int
 }
 
+// deprecated
 func (i *Indexer) indexERC20Transfers(ctx context.Context, errChan chan error) {
-	parsedABI, err := loadTransferABI()
+	parsedABI, err := i.loadTransferABI()
 	if err != nil {
 		errChan <- err
 		return
@@ -127,8 +132,8 @@ func (i *Indexer) handleTransfer(
 	)
 }
 
-func loadTransferABI() (abi.ABI, error) {
-	data, err := os.ReadFile("internal/abi/erc20.json")
+func (i *Indexer) loadTransferABI() (abi.ABI, error) {
+	data, err := os.ReadFile(ERC20_ABI_PATH)
 	if err != nil {
 		return abi.ABI{}, err
 	}

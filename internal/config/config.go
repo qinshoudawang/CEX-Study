@@ -1,7 +1,8 @@
 package config
 
 import (
-	"dex-indexer/internal/db"
+	"dex-indexer/internal/middleware/db"
+	redisclient "dex-indexer/internal/middleware/redis"
 	"os"
 	"strconv"
 
@@ -14,6 +15,7 @@ type Config struct {
 	BatchSize         uint64 // number of blocks to process in one batch
 	ExchangeAddresses map[string]bool
 	DBConfig          *db.Config
+	RedisConfig       *redisclient.Config
 }
 
 // Load loads the configuration
@@ -32,6 +34,11 @@ func Load() *Config {
 			Password: os.Getenv("DB_PASSWORD"),
 			Name:     os.Getenv("DB_NAME"),
 			SSLMode:  os.Getenv("DB_SSLMODE"),
+		},
+		RedisConfig: &redisclient.Config{
+			Addr:     os.Getenv("REDIS_ADDR"),
+			Password: os.Getenv("REDIS_PASSWORD"),
+			DB:       parseEnvAsInt("REDIS_DB", 0),
 		},
 	}
 }

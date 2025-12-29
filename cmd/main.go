@@ -8,9 +8,10 @@ import (
 	"syscall"
 
 	"dex-indexer/internal/config"
-	"dex-indexer/internal/db"
 	"dex-indexer/internal/indexer"
 	"dex-indexer/internal/ledger"
+	"dex-indexer/internal/middleware/db"
+	redisclient "dex-indexer/internal/middleware/redis"
 	"dex-indexer/internal/workflow"
 )
 
@@ -31,8 +32,11 @@ func main() {
 	}
 	defer dbConn.Close()
 
+	// redis init
+	rClient := redisclient.New(cfg.RedisConfig)
+
 	// indexer init
-	idx := indexer.New(cfg, dbConn)
+	idx := indexer.New(cfg, dbConn, rClient)
 
 	// ledger init
 	ledgerService := ledger.NewLedgerService(dbConn)
