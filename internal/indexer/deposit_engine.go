@@ -21,7 +21,7 @@ const (
 
 type DepositEngine struct {
 	db                *sql.DB
-	client            *chain.Client
+	Client            *chain.Client
 	exchangeAddresses map[string]bool
 }
 
@@ -30,7 +30,7 @@ type DepositStatus string
 func NewDepositEngine(cfg *config.Config, client *chain.Client, db *sql.DB) *DepositEngine {
 	return &DepositEngine{
 		db:                db,
-		client:            client,
+		Client:            client,
 		exchangeAddresses: cfg.ExchangeAddresses,
 	}
 }
@@ -71,7 +71,7 @@ func (de *DepositEngine) ListConfirmable(ctx context.Context) ([]*model.Deposit,
 		return nil, err
 	}
 
-	latestBlock, err := de.client.Eth.BlockNumber(ctx)
+	latestBlock, err := de.Client.Eth.BlockNumber(ctx)
 	if err != nil {
 		log.Println("Error getting latest block number:", err)
 		return nil, err

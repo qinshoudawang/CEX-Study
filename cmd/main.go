@@ -42,10 +42,11 @@ func main() {
 	ledgerService := ledger.NewLedgerService(dbConn)
 
 	// workflow init
-	dcw := workflow.NewDepositConfirmWorkflow(
+	dcw := workflow.NewDepositWorkflow(
 		idx.DepositEngine,
 		ledgerService,
 		dbConn,
+		rClient,
 	)
 
 	// start indexer & workflow
