@@ -77,7 +77,8 @@ func (w *DepositWorkflow) reorgnization(ctx context.Context) error {
 	log.Printf("Handling reorg from block number: %d", startNumber)
 
 	eth := w.depositEngine.Client.Eth
-	for blockNumber := startNumber; ; blockNumber-- {
+	var blockNumber uint64
+	for blockNumber = startNumber; blockNumber > 0; blockNumber-- {
 		block, err := eth.HeaderByNumber(ctx, big.NewInt(int64(blockNumber)))
 		if err != nil {
 			log.Println("Error fetching block during reorg:", err)
@@ -104,10 +105,37 @@ func (w *DepositWorkflow) reorgnization(ctx context.Context) error {
 			log.Println("Error reverting deposits during reorg:", err)
 			return err
 		}
+
+		log.Printf("Reset block record for block number: %d", blockNumber)
+		err = repository.SaveBlock(
+			ctx,
+			w.db,
+			blockNumber,
+			block.Hash().Hex(),
+			block.ParentHash.Hex(),
+		)
+		if err != nil {
+			log.Println("Error resetting block record during reorg:", err)
+			return err
+		}
 	}
 
-	redisclient.AcknowledgeReorg(ctx, w.redis, msgID)
-	redisclient.ResumeIndexer(ctx, w.redis)
+	err = redisclient.AcknowledgeReorg(ctx, w.redis, msgID)
+	if err != nil {
+		log.Println("Error acknowledging reorg job:", err)
+		return err
+	}
+	err = redisclient.SetIndexerBlockHeight(ctx, blockNumber, w.redis)
+	if err != nil {
+		log.Println("Error setting indexer block height:", err)
+		return err
+	}
+	err = redisclient.ResumeIndexer(ctx, w.redis)
+	if err != nil {
+		log.Println("Error resuming indexer:", err)
+		return err
+	}
+
 	log.Println("Reorg handling completed, indexer resumed")
 	return nil
 }

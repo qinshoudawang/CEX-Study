@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"log"
 	"math/big"
-	"strings"
 	"time"
 
 	"dex-indexer/internal/chain"
@@ -41,20 +40,13 @@ func New(cfg *config.Config, db *sql.DB, redis *redis.Client) *Indexer {
 func (i *Indexer) Start(ctx context.Context, errChan chan error) {
 	log.Println("Indexer started")
 
-	// start from the latest block‘s parent
-	height, err := i.client.Eth.BlockNumber(ctx)
-	if err != nil {
-		errChan <- err
-		return
-	}
-	height--
-
 	// Prepare for ERC20 transfer indexing
 	transfer := common.HexToAddress(i.cfg.USDC_TOKEN)
 	parsedABI, err := i.loadTransferABI()
 	if err != nil {
 		log.Println("Error loading transfer ABI:", err)
 		errChan <- err
+		return
 	}
 
 	ticker := time.NewTicker(time.Second) // every 1 seconds
@@ -66,15 +58,34 @@ func (i *Indexer) Start(ctx context.Context, errChan chan error) {
 			errChan <- ctx.Err()
 			return
 		case <-ticker.C:
+			needReorg, err := redisclient.IsIndexerPaused(ctx, i.redis)
+			if err != nil {
+				log.Println("Error checking indexer paused status:", err)
+				continue
+			}
+			if needReorg {
+				continue // Skip processing new blocks during reorg
+			}
+			// Get current indexer height
+			height, err := redisclient.GetIndexerBlockHeight(ctx, i.redis)
+			if err != nil {
+				log.Println("Error getting indexer block height:", err)
+				continue
+			}
+			latestBlock, err := i.client.Eth.BlockNumber(ctx)
+			if err != nil {
+				log.Println("Error getting latest block number:", err)
+				continue
+			}
+			if height == 0 {
+				height = latestBlock // start from the latest if not set
+			} else {
+				height = min(height, latestBlock) // ensure we don't go past latest - 1
+			}
 			if err := i.processBlock(ctx, transfer, parsedABI, height); err != nil {
-				if strings.Contains(err.Error(), "not found") {
-					// Block not yet mined, wait for the next tick
-					continue
-				}
 				log.Println("Error processing block:", err)
 				continue
 			}
-			height++
 		}
 	}
 }
@@ -88,31 +99,29 @@ func (i *Indexer) processBlock(
 
 	block, err := i.client.Eth.HeaderByNumber(ctx, big.NewInt(int64(number)))
 	if err != nil {
-		if strings.Contains(err.Error(), "not found") {
-			return err // Block not yet mined, just return
-		}
 		log.Printf("Error fetching block %d: %v", number, err)
 		return err
 	}
 
 	// 1. Reorg detect
-	needReorg, err := i.DetectReorg(ctx, number-1, block.ParentHash.Hex())
+	reorgNumber, err := i.DetectReorg(ctx, number, block.ParentHash.Hex(), block.Hash().Hex())
 	if err != nil {
 		log.Println("Error detecting reorg:", err)
 		return err
 	}
-	if needReorg {
-		log.Println("Reorg detected at block:", number-1)
+	if reorgNumber != 0 {
+		log.Println("Reorg detected at block:", reorgNumber)
 		// stop fetching new blocks
 		err = redisclient.PauseIndexer(ctx, i.redis)
 		if err != nil {
 			log.Println("Error pausing indexer:", err)
 			return err
 		}
-		if err := redisclient.PublishReorg(ctx, number-1, i.redis); err != nil {
+		if err := redisclient.PublishReorg(ctx, reorgNumber, i.redis); err != nil {
 			log.Println("Error publishing reorg:", err)
 			return err
 		}
+		return nil
 	}
 
 	// 2. Process ERC20 transfer logs
@@ -142,27 +151,48 @@ func (i *Indexer) processBlock(
 		return err
 	}
 
+	// 4. Update indexer height in Redis
+	err = redisclient.SetIndexerBlockHeight(ctx, number+1, i.redis)
+	if err != nil {
+		log.Println("Error setting indexer block height:", err)
+		return err
+	}
+
 	return nil
 }
 
 func (i *Indexer) DetectReorg(
 	ctx context.Context,
 	number uint64,
-	parentHash string,
-) (bool, error) {
+	parentHashOnChain string,
+	blockHashOnChain string,
+) (uint64, error) {
 
-	var stored string
-	stored, err := repository.GetHashByBlockNumber(ctx, i.db, number)
-
+	var blockHashLocal string
+	blockHashLocal, err := repository.GetHashByBlockNumber(ctx, i.db, number)
 	if err != nil {
 		log.Printf("Error getting hash by block number %d: %v", number, err)
-		return false, err
+		return 0, err
 	}
-
-	if stored == "" {
-		log.Println("No stored hash for block number:", number)
-		return false, nil
+	if blockHashLocal == "" {
+		// No local record for this block, check parent block
+		parentHashLocal, err := repository.GetHashByBlockNumber(ctx, i.db, number-1)
+		if err != nil {
+			log.Printf("Error getting parent hash by block number %d: %v", number-1, err)
+			return 0, err
+		}
+		if parentHashLocal == "" {
+			// No local record for parent block either, cannot determine reorg
+			return 0, nil
+		}
+		if parentHashLocal != parentHashOnChain {
+			return number - 1, nil
+		}
+		return 0, nil
+	} else {
+		if blockHashLocal != blockHashOnChain {
+			return number, nil
+		}
+		return 0, nil
 	}
-
-	return stored != parentHash, nil
 }

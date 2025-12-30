@@ -15,6 +15,10 @@ import (
 	"dex-indexer/internal/workflow"
 )
 
+func init() {
+	log.SetFlags(log.LstdFlags | log.Lshortfile)
+}
+
 func main() {
 
 	cfg := config.Load()
@@ -64,5 +68,8 @@ func main() {
 
 	// Wait for the first error (or cancellation), then stop the rest.
 	err = <-errChan
+	if err != nil {
+		log.Println("Error occurred: ", err)
+	}
 	cancel()
 }

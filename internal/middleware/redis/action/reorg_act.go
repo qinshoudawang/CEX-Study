@@ -9,9 +9,32 @@ import (
 )
 
 const (
-	INDEXER_PAUSED = "indexer:paused"
-	REORG_JOBS     = "reorg_jobs"
+	INDEXER_BLOCK_HEIGHT = "indexer:block_height"
+	INDEXER_PAUSED       = "indexer:paused"
+	REORG_JOBS           = "reorg_jobs"
 )
+
+func GetIndexerBlockHeight(ctx context.Context, r *redis.Client) (uint64, error) {
+	val, err := r.Get(ctx, INDEXER_BLOCK_HEIGHT).Result()
+	if err != nil {
+		if err == redis.Nil {
+			return 0, nil // key does not exist, return 0
+		}
+		return 0, err
+	}
+
+	var height uint64
+	_, err = fmt.Sscanf(val, "%d", &height)
+	if err != nil {
+		return 0, err
+	}
+
+	return height, nil
+}
+
+func SetIndexerBlockHeight(ctx context.Context, height uint64, r *redis.Client) error {
+	return r.Set(ctx, INDEXER_BLOCK_HEIGHT, fmt.Sprintf("%d", height), 0).Err()
+}
 
 func IsIndexerPaused(ctx context.Context, r *redis.Client) (bool, error) {
 	val, err := r.Get(ctx, INDEXER_PAUSED).Result()
