@@ -9,6 +9,7 @@ CREATE TABLE deposits (
     status          VARCHAR(16) NOT NULL,
     created_at      TIMESTAMP DEFAULT now(),
     confirmed_at    TIMESTAMP
+    revertied_at    TIMESTAMP
 );
 CREATE UNIQUE INDEX uniq_deposit_tx
 ON deposits (tx_hash, token_address);
@@ -46,4 +47,8 @@ CREATE TABLE deposit_addresses (
 );
 
 
-
+CREATE TABLE blocks (
+    number      BIGINT PRIMARY KEY,
+    hash        VARCHAR(66) NOT NULL,
+    parent_hash VARCHAR(66) NOT NULL
+);

@@ -97,10 +97,10 @@ func (i *Indexer) processBlockRange(
 			continue
 		}
 
-		log.Printf("[%s] found %d transfer logs in blocks %d to %d", transfer.Hex(), len(logs), start, end)
+		log.Printf("found %d transfer logs in blocks %d to %d", len(logs), start, end)
 
 		for _, vLog := range logs {
-			i.handleTransfer(ctx, transfer, parsedABI, vLog)
+			i.handleTransfer(ctx, transfer, parsedABI, &vLog)
 		}
 	}
 	return nil
@@ -110,7 +110,7 @@ func (i *Indexer) handleTransfer(
 	ctx context.Context,
 	transfer common.Address,
 	contractAbi abi.ABI,
-	vLog types.Log,
+	vLog *types.Log,
 ) {
 
 	var event TransferEvent

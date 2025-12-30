@@ -33,7 +33,11 @@ func main() {
 	defer dbConn.Close()
 
 	// redis init
-	rClient := redisclient.New(cfg.RedisConfig)
+	rClient, err := redisclient.New(ctx, cfg.RedisConfig)
+	if err != nil {
+		log.Fatal("failed to connect to redis: ", err)
+	}
+	defer rClient.Close()
 
 	// indexer init
 	idx := indexer.New(cfg, dbConn, rClient)

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"log"
 	"math/big"
+	"strings"
 	"time"
 
 	"dex-indexer/internal/chain"
@@ -14,7 +15,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -39,15 +39,15 @@ func New(cfg *config.Config, db *sql.DB, redis *redis.Client) *Indexer {
 }
 
 func (i *Indexer) Start(ctx context.Context, errChan chan error) {
-	log.Println("indexer started")
+	log.Println("Indexer started")
 
-	// start from the latest block
+	// start from the latest block‘s parent
 	height, err := i.client.Eth.BlockNumber(ctx)
 	if err != nil {
 		errChan <- err
 		return
 	}
-	height -= 1
+	height--
 
 	// Prepare for ERC20 transfer indexing
 	transfer := common.HexToAddress(i.cfg.USDC_TOKEN)
@@ -57,16 +57,25 @@ func (i *Indexer) Start(ctx context.Context, errChan chan error) {
 		errChan <- err
 	}
 
+	ticker := time.NewTicker(time.Second) // every 1 seconds
+
 	for {
-		next := height + 1
-
-		if err := i.processBlock(ctx, transfer, parsedABI, next); err != nil {
-			log.Println("Error processing block:", err)
-			time.Sleep(time.Second)
-			continue
+		select {
+		case <-ctx.Done():
+			log.Println("Indexer stopped")
+			errChan <- ctx.Err()
+			return
+		case <-ticker.C:
+			if err := i.processBlock(ctx, transfer, parsedABI, height); err != nil {
+				if strings.Contains(err.Error(), "not found") {
+					// Block not yet mined, wait for the next tick
+					continue
+				}
+				log.Println("Error processing block:", err)
+				continue
+			}
+			height++
 		}
-
-		height = next
 	}
 }
 
@@ -77,9 +86,12 @@ func (i *Indexer) processBlock(
 	number uint64,
 ) error {
 
-	block, err := i.client.Eth.HeaderByNumber(ctx, big.NewInt(int64(number-1)))
+	block, err := i.client.Eth.HeaderByNumber(ctx, big.NewInt(int64(number)))
 	if err != nil {
-		log.Println("Error fetching block:", err)
+		if strings.Contains(err.Error(), "not found") {
+			return err // Block not yet mined, just return
+		}
+		log.Printf("Error fetching block %d: %v", number, err)
 		return err
 	}
 
@@ -90,34 +102,34 @@ func (i *Indexer) processBlock(
 		return err
 	}
 	if needReorg {
+		log.Println("Reorg detected at block:", number-1)
 		// stop fetching new blocks
 		err = redisclient.PauseIndexer(ctx, i.redis)
 		if err != nil {
 			log.Println("Error pausing indexer:", err)
 			return err
 		}
-		log.Println("Reorg detected at block:", number-1)
 		if err := redisclient.PublishReorg(ctx, number-1, i.redis); err != nil {
 			log.Println("Error publishing reorg:", err)
 			return err
 		}
 	}
 
-	// 2. Fetch receipts
-	receipts, err := i.client.Eth.BlockReceipts(ctx, rpc.BlockNumberOrHashWithNumber(rpc.BlockNumber(number-1)))
+	// 2. Process ERC20 transfer logs
+	err = i.processBlockRange(
+		ctx,
+		parsedABI,
+		transfer,
+		parsedABI.Events["Transfer"].ID,
+		number,
+		number,
+	)
 	if err != nil {
-		log.Println("Error fetching receipts:", err)
+		log.Printf("Error processing block range %d to %d: %v", number, number, err)
 		return err
 	}
 
-	// 3. Process logs
-	for _, r := range receipts {
-		for _, vLog := range r.Logs {
-			i.handleTransfer(ctx, transfer, parsedABI, *vLog)
-		}
-	}
-
-	// 4. Save block info
+	// 3. Save block info
 	err = repository.SaveBlock(
 		ctx,
 		i.db,
@@ -131,4 +143,26 @@ func (i *Indexer) processBlock(
 	}
 
 	return nil
+}
+
+func (i *Indexer) DetectReorg(
+	ctx context.Context,
+	number uint64,
+	parentHash string,
+) (bool, error) {
+
+	var stored string
+	stored, err := repository.GetHashByBlockNumber(ctx, i.db, number)
+
+	if err != nil {
+		log.Printf("Error getting hash by block number %d: %v", number, err)
+		return false, err
+	}
+
+	if stored == "" {
+		log.Println("No stored hash for block number:", number)
+		return false, nil
+	}
+
+	return stored != parentHash, nil
 }

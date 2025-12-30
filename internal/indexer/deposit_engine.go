@@ -112,3 +112,27 @@ func (de *DepositEngine) GetUserIDFromDepositTx(
 		tx,
 	)
 }
+
+func (de *DepositEngine) ListDepositsByBlockNumber(
+	ctx context.Context,
+	blockNumber uint64,
+) ([]*model.Deposit, error) {
+	return repository.GetDepositsByBlockNumber(
+		ctx,
+		de.db,
+		blockNumber,
+	)
+}
+
+func (de *DepositEngine) MarkRevertedTx(
+	ctx context.Context,
+	depositID int64,
+	tx *sql.Tx,
+) error {
+	log.Printf("[Reverted] deposit ID: %d", depositID)
+	return repository.RevertTx(
+		ctx,
+		depositID,
+		tx,
+	)
+}

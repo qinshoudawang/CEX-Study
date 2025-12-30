@@ -1,6 +1,11 @@
 package redisclient
 
-import "github.com/redis/go-redis/v9"
+import (
+	"context"
+	"log"
+
+	"github.com/redis/go-redis/v9"
+)
 
 type Config struct {
 	Addr     string
@@ -8,10 +13,17 @@ type Config struct {
 	DB       int
 }
 
-func New(config *Config) *redis.Client {
-	return redis.NewClient(&redis.Options{
+func New(ctx context.Context, config *Config) (*redis.Client, error) {
+	client := redis.NewClient(&redis.Options{
 		Addr:     config.Addr,
-		Password: config.Addr,
+		Password: config.Password,
 		DB:       config.DB,
 	})
+
+	if err := client.Ping(ctx).Err(); err != nil {
+		log.Fatalf("Failed to connect to Redis: %v", err)
+		return nil, err
+	}
+
+	return client, nil
 }

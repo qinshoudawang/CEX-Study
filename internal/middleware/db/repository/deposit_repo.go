@@ -99,3 +99,58 @@ func GetUserIDByDepositAddressTx(
 
 	return userID, err
 }
+
+func GetDepositsByBlockNumber(
+	ctx context.Context,
+	db *sql.DB,
+	blockNumber uint64,
+) ([]*model.Deposit, error) {
+
+	rows, err := db.QueryContext(ctx, `
+		SELECT id, tx_hash, block_number, token_address, from_address, amount, status
+		FROM deposits
+		WHERE block_number = $1
+	`, blockNumber)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var res []*model.Deposit
+	for rows.Next() {
+		d := &model.Deposit{}
+		var amountStr string
+
+		if err := rows.Scan(
+			&d.ID,
+			&d.TxHash,
+			&d.BlockNumber,
+			&d.TokenAddress,
+			&d.FromAddress,
+			&amountStr,
+			&d.Status,
+		); err != nil {
+			return nil, err
+		}
+
+		d.Amount, _ = new(big.Int).SetString(amountStr, 10)
+		res = append(res, d)
+	}
+
+	return res, nil
+}
+
+func RevertTx(
+	ctx context.Context,
+	id int64,
+	tx *sql.Tx,
+) error {
+
+	_, err := tx.ExecContext(ctx, `
+		UPDATE deposits
+		SET status = 'REVERTED',
+		    reverted_at = now()
+		WHERE id = $1
+	`, id)
+	return err
+}

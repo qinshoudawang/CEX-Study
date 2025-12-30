@@ -8,8 +8,13 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
+const (
+	INDEXER_PAUSED = "indexer:paused"
+	REORG_JOBS     = "reorg_jobs"
+)
+
 func IsIndexerPaused(ctx context.Context, r *redis.Client) (bool, error) {
-	val, err := r.Get(ctx, "indexer:paused").Result()
+	val, err := r.Get(ctx, INDEXER_PAUSED).Result()
 	if err != nil {
 		if err == redis.Nil {
 			return false, nil // key does not exist, so not paused
@@ -20,16 +25,16 @@ func IsIndexerPaused(ctx context.Context, r *redis.Client) (bool, error) {
 }
 
 func PauseIndexer(ctx context.Context, r *redis.Client) error {
-	return r.Set(ctx, "indexer:paused", "1", 0).Err()
+	return r.Set(ctx, INDEXER_PAUSED, "1", 0).Err()
 }
 
 func ResumeIndexer(ctx context.Context, r *redis.Client) error {
-	return r.Set(ctx, "indexer:paused", "0", 0).Err()
+	return r.Set(ctx, INDEXER_PAUSED, "0", 0).Err()
 }
 
 func PublishReorg(ctx context.Context, blockNumber uint64, r *redis.Client) error {
 	return r.XAdd(ctx, &redis.XAddArgs{
-		Stream: "reorg_jobs",
+		Stream: REORG_JOBS,
 		Values: map[string]any{
 			"block_number": blockNumber,
 			"ts":           time.Now().Unix(),
@@ -39,7 +44,7 @@ func PublishReorg(ctx context.Context, blockNumber uint64, r *redis.Client) erro
 
 func FetchReorg(ctx context.Context, r *redis.Client) (string, uint64, error) {
 	result, err := r.XRead(ctx, &redis.XReadArgs{
-		Streams: []string{"reorg_jobs", "0"},
+		Streams: []string{REORG_JOBS, "0"},
 		Count:   1,
 		Block:   -1,
 	}).Result()
@@ -66,5 +71,5 @@ func FetchReorg(ctx context.Context, r *redis.Client) (string, uint64, error) {
 }
 
 func AcknowledgeReorg(ctx context.Context, r *redis.Client, id string) error {
-	return r.XDel(ctx, "reorg_jobs", id).Err()
+	return r.XDel(ctx, REORG_JOBS, id).Err()
 }

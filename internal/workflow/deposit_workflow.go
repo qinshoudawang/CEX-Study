@@ -56,11 +56,12 @@ func (w *DepositWorkflow) Start(ctx context.Context, errChan chan error) {
 			}
 			if needReorg {
 				log.Println("Reorg detected, starting reorg handling")
-				continue
+				if err := w.reorgnization(ctx); err != nil {
+					log.Println("Error in DepositWorkflow reorg handling: ", err)
+				}
 			} else {
-				log.Println("No reorg detected, processing deposits")
 				if err := w.confirmAndApply(ctx); err != nil {
-					log.Println("Error in DepositWorkflow: ", err)
+					log.Println("Error in DepositWorkflow confirm and apply: ", err)
 				}
 			}
 		}
@@ -83,9 +84,18 @@ func (w *DepositWorkflow) reorgnization(ctx context.Context) error {
 			return err
 		}
 
-		localHash, err := repository.GetHashByBlockNumber(ctx, w.db, blockNumber)
-		if localHash == block.Hash().Hex() {
-			break // no more reorg needed
+		stored, err := repository.GetHashByBlockNumber(ctx, w.db, blockNumber)
+		if err != nil {
+			log.Printf("Error getting local block %d hash: %v", blockNumber, err)
+			return err
+		}
+		if stored == "" {
+			log.Printf("No local block hash found for block number: %d", blockNumber)
+			break
+		}
+		if stored == block.Hash().Hex() {
+			log.Printf("Reorg handling reached common ancestor at block number: %d", blockNumber)
+			break
 		}
 
 		log.Printf("Reverting deposits in block number: %d", blockNumber)
@@ -103,7 +113,51 @@ func (w *DepositWorkflow) reorgnization(ctx context.Context) error {
 }
 
 func (w *DepositWorkflow) RevertDepositsByBlockNumber(ctx context.Context, blockNumber uint64) error {
-	// TODO
+
+	deposits, err := w.depositEngine.ListDepositsByBlockNumber(ctx, blockNumber)
+	if err != nil {
+		log.Printf("Error listing deposits with block number %d: %v", blockNumber, err)
+		return err
+	}
+
+	for _, d := range deposits {
+
+		tx, err := w.db.BeginTx(ctx, nil)
+		if err != nil {
+			log.Printf("Error revert deposit with block number %d: %v", blockNumber, err)
+			return err
+		}
+		defer tx.Rollback()
+
+		userID, err := w.depositEngine.GetUserIDFromDepositTx(ctx, d, tx)
+		if err != nil {
+			log.Printf("Error getting userId from deposit %d : %v", d.ID, err)
+			continue
+		}
+
+		err = w.ledgerService.RevertDepositTx(
+			ctx,
+			d.ID,
+			userID,
+			indexer.ASSET_USDC,
+			d.Amount,
+			tx,
+		)
+		if err != nil {
+			log.Printf("Error reverting deposit %d: %v", d.ID, err)
+			return err
+		}
+
+		err = w.depositEngine.MarkRevertedTx(ctx, d.ID, tx)
+		if err != nil {
+			log.Printf("Error marking deposit %d as reverted: %v", d.ID, err)
+			return err
+		}
+
+		tx.Commit()
+		log.Printf("Deposit %d reverted successfully", d.ID)
+	}
+
 	return nil
 }
 
