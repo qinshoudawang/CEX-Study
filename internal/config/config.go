@@ -14,6 +14,7 @@ type Config struct {
 	USDC_TOKEN        string
 	BatchSize         uint64 // number of blocks to process in one batch
 	ExchangeAddresses map[string]bool
+	HotWalletAddress  string
 	DBConfig          *db.Config
 	RedisConfig       *redisclient.Config
 }
@@ -27,6 +28,7 @@ func Load() *Config {
 		ExchangeAddresses: map[string]bool{
 			os.Getenv("EXCHANGE_ADDRESS"): true,
 		},
+		HotWalletAddress: os.Getenv("EXCHANGE_ADDRESS"),
 		DBConfig: &db.Config{
 			Host:     os.Getenv("DB_HOST"),
 			Port:     parseEnvAsInt("DB_PORT", 5432),

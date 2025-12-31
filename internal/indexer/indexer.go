@@ -9,6 +9,7 @@ import (
 
 	"dex-indexer/internal/chain"
 	"dex-indexer/internal/config"
+	"dex-indexer/internal/ledger"
 	"dex-indexer/internal/middleware/db/repository"
 	redisclient "dex-indexer/internal/middleware/redis/action"
 
@@ -18,22 +19,29 @@ import (
 )
 
 type Indexer struct {
-	cfg           *config.Config
-	client        *chain.Client
-	db            *sql.DB
-	redis         *redis.Client
-	DepositEngine *DepositEngine
+	cfg            *config.Config
+	Client         *chain.Client
+	db             *sql.DB
+	redis          *redis.Client
+	DepositEngine  *DepositEngine
+	WithdrawEngine *WithdrawEngine
 }
 
-func New(cfg *config.Config, db *sql.DB, redis *redis.Client) *Indexer {
+func New(
+	cfg *config.Config,
+	db *sql.DB,
+	redis *redis.Client,
+	ls *ledger.LedgerService,
+) *Indexer {
 	client := chain.NewClient(cfg.RPC)
 
 	return &Indexer{
-		cfg:           cfg,
-		client:        client,
-		db:            db,
-		redis:         redis,
-		DepositEngine: NewDepositEngine(cfg, client, db),
+		cfg:            cfg,
+		Client:         client,
+		db:             db,
+		redis:          redis,
+		DepositEngine:  NewDepositEngine(cfg, client, db),
+		WithdrawEngine: NewWithdrawEngine(cfg, ls, db),
 	}
 }
 
@@ -41,7 +49,7 @@ func (i *Indexer) Start(ctx context.Context, errChan chan error) {
 	log.Println("Indexer started")
 
 	// Prepare for ERC20 transfer indexing
-	transfer := common.HexToAddress(i.cfg.USDC_TOKEN)
+	token := common.HexToAddress(i.cfg.USDC_TOKEN)
 	parsedABI, err := i.loadTransferABI()
 	if err != nil {
 		log.Println("Error loading transfer ABI:", err)
@@ -49,7 +57,7 @@ func (i *Indexer) Start(ctx context.Context, errChan chan error) {
 		return
 	}
 
-	ticker := time.NewTicker(time.Second) // every 1 seconds
+	ticker := time.NewTicker(5 * time.Second) // every 5 seconds
 
 	for {
 		select {
@@ -72,7 +80,7 @@ func (i *Indexer) Start(ctx context.Context, errChan chan error) {
 				log.Println("Error getting indexer block height:", err)
 				continue
 			}
-			latestBlock, err := i.client.Eth.BlockNumber(ctx)
+			latestBlock, err := i.Client.Eth.BlockNumber(ctx)
 			if err != nil {
 				log.Println("Error getting latest block number:", err)
 				continue
@@ -82,7 +90,7 @@ func (i *Indexer) Start(ctx context.Context, errChan chan error) {
 			} else {
 				height = min(height, latestBlock) // ensure we don't go past latest - 1
 			}
-			if err := i.processBlock(ctx, transfer, parsedABI, height); err != nil {
+			if err := i.processBlock(ctx, token, parsedABI, height); err != nil {
 				log.Println("Error processing block:", err)
 				continue
 			}
@@ -92,12 +100,12 @@ func (i *Indexer) Start(ctx context.Context, errChan chan error) {
 
 func (i *Indexer) processBlock(
 	ctx context.Context,
-	transfer common.Address,
+	token common.Address,
 	parsedABI abi.ABI,
 	number uint64,
 ) error {
 
-	block, err := i.client.Eth.HeaderByNumber(ctx, big.NewInt(int64(number)))
+	block, err := i.Client.Eth.HeaderByNumber(ctx, big.NewInt(int64(number)))
 	if err != nil {
 		log.Printf("Error fetching block %d: %v", number, err)
 		return err
@@ -128,7 +136,7 @@ func (i *Indexer) processBlock(
 	err = i.processBlockRange(
 		ctx,
 		parsedABI,
-		transfer,
+		token,
 		parsedABI.Events["Transfer"].ID,
 		number,
 		number,

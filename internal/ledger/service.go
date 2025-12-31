@@ -1,19 +1,16 @@
 package ledger
 
-import (
-	"context"
-	"database/sql"
-	"dex-indexer/internal/middleware/db/repository"
-	"math/big"
-)
+import "database/sql"
 
 type EntryType string
 
 const (
-	Deposit  EntryType = "DEPOSIT"
-	Withdraw EntryType = "WITHDRAW"
-	Trade    EntryType = "TRADE"
-	REVERSAL EntryType = "REVERSAL"
+	DEPOSIT          EntryType = "DEPOSIT"
+	TRADE            EntryType = "TRADE"
+	REVERSAL         EntryType = "REVERSAL"
+	WITHDRAW_HOLD    EntryType = "WITHDRAW_HOLD"
+	WITHDRAW_RELEASE EntryType = "WITHDRAW_RELEASE"
+	WITHDRAW_FINAL   EntryType = "WITHDRAW_FINAL"
 )
 
 type LedgerService struct {
@@ -22,68 +19,4 @@ type LedgerService struct {
 
 func NewLedgerService(db *sql.DB) *LedgerService {
 	return &LedgerService{db: db}
-}
-
-func (s *LedgerService) ApplyDepositTx(
-	ctx context.Context,
-	depositID int64,
-	userID int64,
-	asset string,
-	amount *big.Int,
-	tx *sql.Tx,
-) error {
-
-	if err := repository.InsertLedgerEntry(
-		ctx, tx,
-		userID,
-		asset,
-		amount,
-		string(Deposit),
-		depositID,
-	); err != nil {
-		return err
-	}
-
-	if err := repository.AddBalance(
-		ctx, tx,
-		userID,
-		asset,
-		amount,
-	); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (s *LedgerService) RevertDepositTx(
-	ctx context.Context,
-	depositID int64,
-	userID int64,
-	asset string,
-	amount *big.Int,
-	tx *sql.Tx,
-) error {
-
-	if err := repository.InsertLedgerEntry(
-		ctx, tx,
-		userID,
-		asset,
-		new(big.Int).Neg(amount),
-		string(REVERSAL),
-		depositID,
-	); err != nil {
-		return err
-	}
-
-	if err := repository.AddBalance(
-		ctx, tx,
-		userID,
-		asset,
-		new(big.Int).Neg(amount),
-	); err != nil {
-		return err
-	}
-
-	return nil
 }

@@ -120,6 +120,7 @@ func (w *DepositWorkflow) reorgnization(ctx context.Context) error {
 		}
 	}
 
+	// if reaching blockNumber 0, means we are using a different chain
 	err = redisclient.AcknowledgeReorg(ctx, w.redis, msgID)
 	if err != nil {
 		log.Println("Error acknowledging reorg job:", err)

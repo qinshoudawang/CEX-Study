@@ -52,3 +52,16 @@ CREATE TABLE blocks (
     hash        VARCHAR(66) NOT NULL,
     parent_hash VARCHAR(66) NOT NULL
 );
+
+
+CREATE TABLE withdraws (
+    id              BIGSERIAL PRIMARY KEY,
+    user_id         BIGINT NOT NULL,
+    asset           VARCHAR(32) NOT NULL,
+    amount          NUMERIC(78,0) NOT NULL,
+    to_address      VARCHAR(42) NOT NULL,
+    status          VARCHAR(32) NOT NULL,
+    tx_hash         VARCHAR(66),
+    created_at      TIMESTAMP DEFAULT now(),
+    confirmed_at    TIMESTAMP
+);

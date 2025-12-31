@@ -35,14 +35,14 @@ func (i *Indexer) indexERC20Transfers(ctx context.Context, errChan chan error) {
 	transfer := common.HexToAddress(i.cfg.USDC_TOKEN)
 	eventID := parsedABI.Events["Transfer"].ID
 
-	lastProcessedBlock, err := i.client.Eth.BlockNumber(ctx) // Track the last processed block
+	lastProcessedBlock, err := i.Client.Eth.BlockNumber(ctx) // Track the last processed block
 	if err != nil {
 		errChan <- err
 		return
 	}
 	lastProcessedBlock -= i.cfg.BatchSize + 1
 
-	ticker := time.NewTicker(1 * time.Second) // Polling interval of 1 second
+	ticker := time.NewTicker(5 * time.Second) // Polling interval of 1 second
 	defer ticker.Stop()
 
 	for {
@@ -52,7 +52,7 @@ func (i *Indexer) indexERC20Transfers(ctx context.Context, errChan chan error) {
 			errChan <- ctx.Err()
 			return
 		case <-ticker.C:
-			blockNumber, err := i.client.Eth.BlockNumber(ctx)
+			blockNumber, err := i.Client.Eth.BlockNumber(ctx)
 			if err != nil {
 				log.Printf("Error fetching block number: %v", err)
 				continue
@@ -76,7 +76,7 @@ func (i *Indexer) indexERC20Transfers(ctx context.Context, errChan chan error) {
 func (i *Indexer) processBlockRange(
 	ctx context.Context,
 	parsedABI abi.ABI,
-	transfer common.Address,
+	token common.Address,
 	eventID common.Hash,
 	fromBlock, toBlock uint64,
 ) error {
@@ -85,13 +85,13 @@ func (i *Indexer) processBlockRange(
 		end := min(start+i.cfg.BatchSize-1, toBlock)
 
 		query := ethereum.FilterQuery{
-			Addresses: []common.Address{transfer},
+			Addresses: []common.Address{token},
 			Topics:    [][]common.Hash{{eventID}},
 			FromBlock: big.NewInt(int64(start)),
 			ToBlock:   big.NewInt(int64(end)),
 		}
 
-		logs, err := i.client.Eth.FilterLogs(ctx, query)
+		logs, err := i.Client.Eth.FilterLogs(ctx, query)
 		if err != nil {
 			log.Printf("Error fetching logs for blocks %d to %d: %v", start, end, err)
 			continue
@@ -100,7 +100,7 @@ func (i *Indexer) processBlockRange(
 		log.Printf("found %d transfer logs in blocks %d to %d", len(logs), start, end)
 
 		for _, vLog := range logs {
-			i.handleTransfer(ctx, transfer, parsedABI, &vLog)
+			i.handleTransfer(ctx, token, parsedABI, &vLog)
 		}
 	}
 	return nil
@@ -108,7 +108,7 @@ func (i *Indexer) processBlockRange(
 
 func (i *Indexer) handleTransfer(
 	ctx context.Context,
-	transfer common.Address,
+	token common.Address,
 	contractAbi abi.ABI,
 	vLog *types.Log,
 ) {
@@ -124,9 +124,17 @@ func (i *Indexer) handleTransfer(
 	i.DepositEngine.OnTransfer(
 		ctx,
 		vLog.TxHash.Hex(),
-		transfer,
+		token,
 		common.HexToAddress(vLog.Topics[1].Hex()),
 		common.HexToAddress(vLog.Topics[2].Hex()),
+		event.Value,
+		vLog.BlockNumber,
+	)
+
+	i.WithdrawEngine.OnTransfer(
+		ctx,
+		vLog.TxHash.Hex(),
+		common.HexToAddress(vLog.Topics[1].Hex()),
 		event.Value,
 		vLog.BlockNumber,
 	)
