@@ -1,8 +1,8 @@
 package config
 
 import (
-	"dex-indexer/internal/middleware/db"
-	redisclient "dex-indexer/internal/middleware/redis"
+	"dex-indexer/internal/infra/db"
+	redisclient "dex-indexer/internal/infra/redis"
 	"os"
 	"strconv"
 

@@ -9,9 +9,9 @@ import (
 
 	"dex-indexer/internal/chain"
 	"dex-indexer/internal/config"
+	"dex-indexer/internal/infra/db/repository"
+	redisclient "dex-indexer/internal/infra/redis/action"
 	"dex-indexer/internal/ledger"
-	"dex-indexer/internal/middleware/db/repository"
-	redisclient "dex-indexer/internal/middleware/redis/action"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"

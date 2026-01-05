@@ -4,9 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"dex-indexer/internal/config"
+	"dex-indexer/internal/infra/db/model"
+	"dex-indexer/internal/infra/db/repository"
 	"dex-indexer/internal/ledger"
-	"dex-indexer/internal/middleware/db/model"
-	"dex-indexer/internal/middleware/db/repository"
 	"log"
 	"math/big"
 

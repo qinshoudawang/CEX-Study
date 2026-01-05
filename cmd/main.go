@@ -14,13 +14,15 @@ import (
 	"dex-indexer/internal/chain"
 	"dex-indexer/internal/config"
 	"dex-indexer/internal/indexer"
+	"dex-indexer/internal/infra/db"
+	httpinfra "dex-indexer/internal/infra/http"
+	redisclient "dex-indexer/internal/infra/redis"
 	"dex-indexer/internal/ledger"
-	"dex-indexer/internal/middleware/db"
-	redisclient "dex-indexer/internal/middleware/redis"
 	"dex-indexer/internal/service"
 	"dex-indexer/internal/workflow"
 
 	"github.com/gin-gonic/gin"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 func init() {
@@ -82,7 +84,6 @@ func main() {
 	if err != nil {
 		log.Println("Error occurred: ", err)
 	}
-	cancel()
 }
 
 func InitializeGinServer(
@@ -92,7 +93,11 @@ func InitializeGinServer(
 	dbConn *sql.DB,
 	errChan chan error,
 ) {
+	httpinfra.Register()
+
 	r := gin.Default()
+	r.Use(gin.Recovery())
+	r.Use(httpinfra.MetricsMiddleware())
 
 	withdrawService := service.NewWithdrawServiceImpl(
 		ctx,
@@ -102,7 +107,11 @@ func InitializeGinServer(
 	)
 	withdrawHandler := api.NewWithdrawHandler(withdrawService)
 
-	api.RegisterRoutes(r, withdrawHandler)
+	api.RegisterRoutes(
+		r,
+		withdrawHandler,
+		promhttp.Handler(),
+	)
 
 	// Create http.Server for graceful shutdown
 	server := &http.Server{

@@ -3,7 +3,7 @@ package repository
 import (
 	"context"
 	"database/sql"
-	"dex-indexer/internal/middleware/db/model"
+	"dex-indexer/internal/infra/db/model"
 )
 
 func InsertWithdraw(
